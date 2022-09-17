@@ -18,7 +18,7 @@ enum ReturnCode : uint8_t {
 class Interpreter {
   static constexpr size_t maxSize = 30000;
 
-  std::array<char, maxSize> arr{};
+  std::array<uint8_t, maxSize> arr{};
 
   std::stack<size_t> bracketInd{};
 
@@ -65,26 +65,29 @@ public:
     for (; commandInd < code.length(); ++commandInd) {
       switch (code[commandInd]) {
       case '>':
-        if (relPtr >= maxSize - 1)
-          return BufferOverflow;
         ++relPtr;
         break;
       case '<':
-        if (relPtr <= 0)
-          return BufferUnderflow;
         --relPtr;
         break;
       case '+':
+        if (relPtr > maxSize - 1 )
+          return BufferOverflow;
+        if (arr.at(relPtr) >= 0xFF)
+          return BufferUnderflow;
         ++arr.at(relPtr);
         break;
       case '-':
+        if (relPtr > maxSize - 1 )
+          return BufferOverflow;
+        if (arr.at(relPtr) <= 0x00)
+          return BufferUnderflow;
         --arr.at(relPtr);
         break;
       case '.':
         std::putchar(arr.at(relPtr));
         break;
       case ',':
-        std::cout << '>';
         std::cin >> arr.at(relPtr);
         break;
       case '[':
