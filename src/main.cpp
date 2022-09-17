@@ -11,10 +11,11 @@ enum ReturnCode : uint8_t {
   ExitSuccess,
   BufferOverflow,
   BufferUnderflow,
-  UnmatchedBrackets
+  UnmatchedBrackets,
+  FileOpenFailed,
 };
 
-struct Interpreter {
+class Interpreter {
   static constexpr size_t maxSize = 30000;
 
   std::array<char, maxSize> arr{};
@@ -55,7 +56,7 @@ struct Interpreter {
     }
     return ExitSuccess;
   }
-
+public:
   ReturnCode executeCode(std::string_view _c) {
     code = _c;
     relPtr = commandInd = 0;
@@ -64,12 +65,12 @@ struct Interpreter {
     for (; commandInd < code.length(); ++commandInd) {
       switch (code[commandInd]) {
       case '>':
-        if (relPtr == maxSize - 1)
+        if (relPtr >= maxSize - 1)
           return BufferOverflow;
         ++relPtr;
         break;
       case '<':
-        if (relPtr == 0)
+        if (relPtr <= 0)
           return BufferUnderflow;
         --relPtr;
         break;
@@ -107,20 +108,23 @@ void printUsage() {
 std::ostream &operator<<(std::ostream &os, const ReturnCode &rc) {
   switch (rc) {
   case BufferUnderflow:
-    os << "[ERROR]   Buffer underflow";
+    os << "[ERROR]   Buffer underflow.";
     break;
   case BufferOverflow:
-    os << "[ERROR]   Buffer overflow";
+    os << "[ERROR]   Buffer overflow.";
     break;
   case UnmatchedBrackets:
-    os << "[ERROR]   Unmatched brackets";
+    os << "[ERROR]   Unmatched brackets.";
+    break;
+  case FileOpenFailed:
+    os << "[ERROR]   Couldn't open the file.";
     break;
   case ExitSuccess:
     os << "Program interpreted successfully!";
+    break;
   }
   return os;
 }
-
 template <>
 struct fmt::formatter<ReturnCode> : ostream_formatter {};
 
@@ -128,11 +132,14 @@ int main(int argc, char **argv) {
   if (argc <= 1)
     printUsage();
   Interpreter bf;
+  ReturnCode result;
   std::ifstream ins(argv[1]);
-  std::stringstream ss{};
-  ss << ins.rdbuf();
-  fmt::print("Executing...\n");
-  ReturnCode result = bf.executeCode(ss.str());
+  if (ins.is_open()) {
+    std::stringstream ss{};
+    ss << ins.rdbuf();
+    result = bf.executeCode(ss.str());
+  }
+  else result = FileOpenFailed;
   fmt::print("{}\n", result);
   return result;
 }
