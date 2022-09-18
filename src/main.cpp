@@ -15,6 +15,10 @@ enum ReturnCode : uint8_t {
   FileOpenFailed,
 };
 
+enum Flag : uint32_t { 
+  AllowBufferUnderflow = 1 << 0
+};
+
 class Interpreter {
   static constexpr size_t maxSize = 30000;
 
@@ -26,6 +30,7 @@ class Interpreter {
 
   size_t relPtr{};
   size_t commandInd{};
+  uint32_t flags{};
 
   ReturnCode handleBracket() {
     if (code[commandInd] == '[') {
@@ -73,14 +78,14 @@ public:
       case '+':
         if (relPtr > maxSize - 1 )
           return BufferOverflow;
-        if (arr.at(relPtr) >= 0xFF)
+        if (arr.at(relPtr) >= 0xFF && !(flags & AllowBufferUnderflow))
           return BufferUnderflow;
         ++arr.at(relPtr);
         break;
       case '-':
         if (relPtr > maxSize - 1 )
           return BufferOverflow;
-        if (arr.at(relPtr) <= 0x00)
+        if (arr.at(relPtr) <= 0x00 && !(flags & AllowBufferUnderflow))
           return BufferUnderflow;
         --arr.at(relPtr);
         break;
@@ -100,6 +105,9 @@ public:
     if (!bracketInd.empty())
       return UnmatchedBrackets;
     return ExitSuccess;
+  }
+  void enableFlag(Flag f) {
+    flags |= f;
   }
 };
 
@@ -136,7 +144,14 @@ int main(int argc, char **argv) {
     printUsage();
   Interpreter bf;
   ReturnCode result;
-  std::ifstream ins(argv[1]);
+  std::string file_name{};
+  for (int ind = 1;ind<argc;++ind) {
+    if (strcmp(argv[ind],"--Aunderflow") == 0 || strcmp(argv[ind],"-uf") == 0) {
+      bf.enableFlag(AllowBufferUnderflow); continue;
+    }
+    file_name = argv[ind];
+  }
+  std::ifstream ins(file_name);
   if (ins.is_open()) {
     std::stringstream ss{};
     ss << ins.rdbuf();
