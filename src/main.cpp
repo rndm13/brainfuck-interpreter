@@ -32,7 +32,6 @@ class Interpreter {
 
   size_t relPtr{};
   size_t commandInd{};
-  uint32_t flags{};
 
   ReturnCode parseBrackets() {
     // positions of '['
@@ -51,7 +50,7 @@ class Interpreter {
   }
 
 public:
-  ReturnCode executeCode(std::string_view _c) {
+  ReturnCode executeCode(std::string_view _c, uint32_t flags = 0) {
     code = _c;
     relPtr = commandInd = 0;
     arr = {0};
@@ -88,21 +87,16 @@ public:
       case '[':
         if (arr.at(relPtr) == 0) {
           commandInd = bracketJumps[commandInd];
-//          fmt::print("Jumped to {}", relPtr);
         }
         break;
       case ']':
         if (arr.at(relPtr) != 0) {
           commandInd = bracketJumps[commandInd];
-//          fmt::print("Jumped to {}", relPtr);
         }
         break;
       }
     }
     return ExitSuccess;
-  }
-  void enableFlag(Flag f) {
-    flags |= f;
   }
 };
 
@@ -137,12 +131,18 @@ struct fmt::formatter<ReturnCode> : ostream_formatter {};
 int main(int argc, char **argv) {
   if (argc <= 1)
     printUsage();
+
   Interpreter bf;
+
   ReturnCode result;
+
   std::string file_name{};
+  uint32_t flags{};
+
   for (int ind = 1;ind<argc;++ind) {
     if (strcmp(argv[ind],"--Aunderflow") == 0 || strcmp(argv[ind],"-uf") == 0) {
-      bf.enableFlag(AllowBufferUnderflow); continue;
+      flags |= AllowBufferUnderflow;
+      continue;
     }
     file_name = argv[ind];
   }
@@ -150,7 +150,7 @@ int main(int argc, char **argv) {
   if (ins.is_open()) {
     std::stringstream ss{};
     ss << ins.rdbuf();
-    result = bf.executeCode(ss.str());
+    result = bf.executeCode(ss.str(), flags);
   }
   else result = FileOpenFailed;
   fmt::print("{}\n", result);
