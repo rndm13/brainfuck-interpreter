@@ -1,4 +1,5 @@
 #include <array>
+#include <unordered_map>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -24,49 +25,38 @@ class Interpreter {
 
   std::array<uint8_t, maxSize> arr{};
 
-  std::stack<size_t> bracketInd{};
+  // key: bracket position value: position to jump to
+  std::unordered_map<size_t,size_t> bracketJumps{};
 
-  std::string code;
+  std::string code{};
 
   size_t relPtr{};
   size_t commandInd{};
   uint32_t flags{};
 
-  ReturnCode handleBracket() {
-    if (code[commandInd] == '[') {
-      bracketInd.push(commandInd++);
-      if (arr.at(relPtr) == 0) {
-        for (; !bracketInd.empty(); ++commandInd) {
-          if (commandInd >= code.length())
-            return UnmatchedBrackets;
-          if (code[commandInd] == '[')
-            bracketInd.push(commandInd);
-          if (code[commandInd] == ']')
-            bracketInd.pop();
-        }
+  ReturnCode parseBrackets() {
+    // positions of '['
+    std::stack<size_t> brackets{};
+    for (size_t ind = 0;ind < code.length();++ind) {
+      if (code[ind] == '[')
+        brackets.push(ind);
+      if (code[ind] == ']') {
+        bracketJumps[brackets.top()] = ind;
+        bracketJumps[ind] = brackets.top();
+        brackets.pop();
       }
     }
-
-    if (arr.at(relPtr) == 0 && code[commandInd] == ']') {
-      ++commandInd;
-      if (bracketInd.empty())
-        return UnmatchedBrackets;
-      bracketInd.pop();
-    }
-
-    if (arr.at(relPtr) != 0 && code[commandInd] == ']') {
-      if (bracketInd.empty())
-        return UnmatchedBrackets;
-      commandInd = bracketInd.top();
-    }
+    if (!brackets.empty()) return UnmatchedBrackets;
     return ExitSuccess;
   }
+
 public:
   ReturnCode executeCode(std::string_view _c) {
     code = _c;
     relPtr = commandInd = 0;
     arr = {0};
-
+    ReturnCode rc = parseBrackets();
+    if (rc) return rc;
     for (; commandInd < code.length(); ++commandInd) {
       switch (code[commandInd]) {
       case '>':
@@ -96,14 +86,19 @@ public:
         std::cin >> arr.at(relPtr);
         break;
       case '[':
+        if (arr.at(relPtr) == 0) {
+          commandInd = bracketJumps[commandInd];
+//          fmt::print("Jumped to {}", relPtr);
+        }
+        break;
       case ']':
-        ReturnCode result = handleBracket();
-        if (result) return result;
+        if (arr.at(relPtr) != 0) {
+          commandInd = bracketJumps[commandInd];
+//          fmt::print("Jumped to {}", relPtr);
+        }
         break;
       }
     }
-    if (!bracketInd.empty())
-      return UnmatchedBrackets;
     return ExitSuccess;
   }
   void enableFlag(Flag f) {
