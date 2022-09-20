@@ -135,7 +135,7 @@ public:
 };
 
 void printUsage() {
-  fmt::print("Usage: bf file_name\n");
+  fmt::print("Usage: bf file_name\nFlags:\n   --Eunderflow, -uf Enable error on buffer underflow.\n");
   std::exit(0);
 }
 
