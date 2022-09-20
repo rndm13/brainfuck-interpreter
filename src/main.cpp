@@ -5,10 +5,11 @@
 #include <sstream>
 #include <stack>
 #include <string_view>
+#include <vector>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 
-enum ReturnCode : uint8_t {
+enum ReturnCode : uint32_t {
   ExitSuccess,
   BufferOverflow,
   BufferUnderflow,
@@ -17,7 +18,25 @@ enum ReturnCode : uint8_t {
 };
 
 enum Flag : uint32_t { 
-  AllowBufferUnderflow = 1 << 0
+  ErrorBufferUnderflow = 1 << 0
+};
+
+enum CommandType : uint8_t {
+  Increment = '+',
+  Decrement = '-',
+  MoveLeft  = '<',
+  MoveRight = '>',
+  LoopBegin = '[',
+  LoopEnd   = ']',
+  Input     = ',',
+  Output    = '.',
+  SetZero   = 0x08, // backspace char that probably won't be used
+};
+
+struct Command {
+  CommandType type{};
+  uint32_t count{1};
+  Command(CommandType _t) : type(_t) {}
 };
 
 class Interpreter {
@@ -25,75 +44,90 @@ class Interpreter {
 
   std::array<uint8_t, maxSize> arr{};
 
-  // key: bracket position value: position to jump to
-  std::unordered_map<size_t,size_t> bracketJumps{};
-
-  std::string code{};
-
+  std::vector<Command> commands;
+  
   size_t relPtr{};
-  size_t commandInd{};
 
-  ReturnCode parseBrackets() {
+  ReturnCode parseCode(std::string_view code) {
     // positions of '['
     std::stack<size_t> brackets{};
+
+    fmt::print("Parsing code...\n");
+
     for (size_t ind = 0;ind < code.length();++ind) {
-      if (code[ind] == '[')
-        brackets.push(ind);
-      if (code[ind] == ']') {
-        bracketJumps[brackets.top()] = ind;
-        bracketJumps[ind] = brackets.top();
-        brackets.pop();
+      auto type = CommandType(code[ind]);
+      switch (type) {
+        case '[':
+          brackets.push(commands.size());
+          commands.push_back(Command(type));
+          break;
+        case ']':
+          commands.push_back(Command(type));
+          commands[brackets.top()].count = commands.size() - 1;
+          commands.back().count = brackets.top();
+          brackets.pop();
+          break;
+        default:
+          if (!commands.empty() && type == commands.back().type)
+            ++commands.back().count;
+          else commands.push_back(Command(type));
+          break;
       }
     }
     if (!brackets.empty()) return UnmatchedBrackets;
+    fmt::print("Parsed successfully.\n");
     return ExitSuccess;
   }
 
 public:
   ReturnCode executeCode(std::string_view _c, uint32_t flags = 0) {
-    code = _c;
-    relPtr = commandInd = 0;
+    size_t commandInd{};
+    relPtr = 0;
     arr = {0};
-    ReturnCode rc = parseBrackets();
+    ReturnCode rc = parseCode(_c);
     if (rc) return rc;
-    for (; commandInd < code.length(); ++commandInd) {
-      switch (code[commandInd]) {
+    for (; commandInd < commands.size(); ++commandInd) {
+      const Command& cur = commands[commandInd];
+      switch (cur.type) {
       case '>':
-        ++relPtr;
+        relPtr+=cur.count;
         break;
       case '<':
-        --relPtr;
+        relPtr-=cur.count;
         break;
       case '+':
-        if (relPtr > maxSize - 1 )
+        if (relPtr > maxSize - 1)
           return BufferOverflow;
-        if (arr.at(relPtr) >= 0xFF && !(flags & AllowBufferUnderflow))
+        if (arr.at(relPtr) >= 0xFF - cur.count + 1 && (flags & ErrorBufferUnderflow))
           return BufferUnderflow;
-        ++arr.at(relPtr);
+        arr.at(relPtr)+=cur.count;
         break;
       case '-':
-        if (relPtr > maxSize - 1 )
+        if (relPtr > maxSize - 1)
           return BufferOverflow;
-        if (arr.at(relPtr) <= 0x00 && !(flags & AllowBufferUnderflow))
+        if (arr.at(relPtr) <= 0x00 + cur.count - 1 && (flags & ErrorBufferUnderflow))
           return BufferUnderflow;
-        --arr.at(relPtr);
+        arr.at(relPtr)-=cur.count;
         break;
       case '.':
-        std::putchar(arr.at(relPtr));
+        for (size_t i = 0;i<cur.count;++i)
+          std::putchar(arr.at(relPtr));
         break;
       case ',':
-        std::cin >> arr.at(relPtr);
+        for (size_t i = 0;i<cur.count;++i)
+          arr.at(relPtr) = std::cin.get();
         break;
       case '[':
-        if (arr.at(relPtr) == 0) {
-          commandInd = bracketJumps[commandInd];
-        }
+        if (arr.at(relPtr) == 0)
+          commandInd = cur.count;
         break;
       case ']':
-        if (arr.at(relPtr) != 0) {
-          commandInd = bracketJumps[commandInd];
-        }
+        if (arr.at(relPtr) != 0) 
+          commandInd = cur.count;
         break;
+      // Optimizer generated command '[-]' '[+]'
+      case SetZero:
+        arr.at(relPtr) = 0;
       }
     }
     return ExitSuccess;
@@ -140,8 +174,8 @@ int main(int argc, char **argv) {
   uint32_t flags{};
 
   for (int ind = 1;ind<argc;++ind) {
-    if (strcmp(argv[ind],"--Aunderflow") == 0 || strcmp(argv[ind],"-uf") == 0) {
-      flags |= AllowBufferUnderflow;
+    if (strcmp(argv[ind],"--Eunderflow") == 0 || strcmp(argv[ind],"-uf") == 0) {
+      flags |= ErrorBufferUnderflow;
       continue;
     }
     file_name = argv[ind];
